@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI-Based Digital Identity & Credential Verification System</title>
+  <!-- Tailwind CSS for clean layout utilities -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- QRious library to draw QR codes on HTML canvas -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ============================================================
+       EASY THEME COLORS (Change these variables to recolor the app)
+       ============================================================ */
+    :root {
+      --primary: #1b4332;        /* Deep Emerald Green (Header & main buttons) */
+      --primary-hover: #2d6a4f;  /* Lighter Emerald on hover */
+      --accent: #d97706;         /* Warm Gold/Amber highlight */
+      --bg-page: #f4f7f5;        /* Soft Mint/Ivory page background */
+      --bg-card: #ffffff;        /* Clean white card background */
+      --text-main: #1f2937;      /* Dark slate text */
+      --text-muted: #6b7280;     /* Muted gray text */
+      --border-color: #d1fae5;   /* Subtle mint card border */
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-page);
+      color: var(--text-main);
+    }
+
+    .top-header {
+      background-color: var(--primary);
+      border-bottom: 4px solid var(--accent);
+    }
+
+    .btn-primary {
+      background-color: var(--primary);
+      color: #ffffff;
+    }
+    .btn-primary:hover {
+      background-color: var(--primary-hover);
+    }
+
+    .tab-active {
+      background-color: var(--primary);
+      color: #ffffff;
+    }
+
+    .tab-inactive {
+      background-color: #ffffff;
+      color: var(--text-main);
+      border: 1px solid #d1d5db;
+    }
+    .tab-inactive:hover {
+      background-color: #ecfdf5;
+    }
+
+    .student-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Simple Notification Banner (Replaces browser alert()) -->
+  <div id="status-banner" class="hidden fixed bottom-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white bg-emerald-900"></div>
+
+  <!-- ============================================================
+       1. TOP HEADER
+       ============================================================ -->
+  <header class="top-header text-white py-6 px-4 sm:px-8">
+    <div class="max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <span class="inline-block text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md bg-amber-500/20 text-amber-300 border border-amber-400/30 mb-2">
+          B.Tech Final Year Project Demo
+        </span>
+        <h1 class="text-xl sm:text-2xl font-bold tracking-tight">
+          AI-Based Digital Identity & Credential Verification System
+        </h1>
+        <p class="text-sm text-emerald-100 mt-1">
+          Issue tamper-proof QR certificates with SHA-256 hashing and verify them with AI anomaly risk checks.
+        </p>
+      </div>
+      <button onclick="resetDemoRecords()" class="self-start sm:self-center px-3.5 py-2 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-white border border-white/20 transition">
+        Reset Sample Data
+      </button>
+    </div>
+  </header>
+
+  <!-- ============================================================
+       2. THREE CLEAN NAVIGATION TABS
+       ============================================================ -->
+  <div class="max-w-5xl w-full mx-auto px-4 sm:px-8 mt-6">
+    <div class="flex flex-wrap gap-2">
+      <button id="btn-tab-issue" onclick="showTab('issue')" class="tab-active px-4 py-2.5 rounded-xl text-sm font-semibold transition">
+        1. Issue Credential
+      </button>
+      <button id="btn-tab-verify" onclick="showTab('verify')" class="tab-inactive px-4 py-2.5 rounded-xl text-sm font-semibold transition">
+        2. Verify Credential
+      </button>
+      <button id="btn-tab-records" onclick="showTab('records')" class="tab-inactive px-4 py-2.5 rounded-xl text-sm font-semibold transition">
+        3. Saved Records & Logs (<span id="record-count">0</span>)
+      </button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       3. MAIN CONTENT AREA
+       ============================================================ -->
+  <main class="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-8 py-6">
+
+    <!-- ------------------------------------------------------------
+         TAB 1: ISSUE CREDENTIAL
+         ------------------------------------------------------------ -->
+    <section id="section-issue" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Left Card: Student / Owner Input Form -->
+      <div class="student-card p-6">
+        <h2 class="text-lg font-bold text-emerald-950">Enter Credential Owner Details</h2>
+        <p class="text-xs text-gray-500 mt-1">
+          Fill in the details below to lock them with a SHA-256 fingerprint and generate a QR code.
+        </p>
+
+        <form onsubmit="handleIssueForm(event)" class="mt-5 space-y-4">
+          <div>
+            <label for="input-cred-id" class="block text-sm font-medium text-gray-700 mb-1">Credential ID</label>
+            <input type="text" id="input-cred-id" required placeholder="e.g., CRED-2026-103"
+              class="w-full rounded-xl border border-gray-300 px-3.5 py-2.5 text-sm focus:outline-none focus:border-emerald-700" />
+          </div>
+
+          <div>
+            <label for="input-holder-name" class="block text-sm font-medium text-gray-700 mb-1">Holder Full Name</label>
+            <input type="text" id="input-holder-name" required placeholder="e.g., Ananya Mishra"
+              class="w-full rounded-xl border border-gray-300 px-3.5 py-2.5 text-sm focus:outline-none focus:border-emerald-700" />
+          </div>
+
+          <div>
+            <label for="input-cred-type" class="block text-sm font-medium text-gray-700 mb-1">Credential Type</label>
+            <input type="text" id="input-cred-type" required placeholder="e.g., B.Tech Computer Science"
+              class="w-full rounded-xl border border-gray-300 px-3.5 py-2.5 text-sm focus:outline-none focus:border-emerald-700" />
+          </div>
+
+          <div>
+            <label for="input-issue-date" class="block text-sm font-medium text-gray-700 mb-1">Issue Date</label>
+            <input type="date" id="input-issue-date" required value="2026-11-23"
+              class="w-full rounded-xl border border-gray-300 px-3.5 py-2.5 text-sm focus:outline-none focus:border-emerald-700" />
+          </div>
+
+          <button type="submit" class="btn-primary w-full py-3 px-4 rounded-xl text-sm font-semibold transition">
+            Generate SHA-256 & Issue QR Code
+          </button>
+        </form>
+      </div>
+
+      <!-- Right Card: Plain-English Issuance Summary -->
+      <div class="student-card p-6 flex flex-col justify-between">
+        <div>
+          <span class="inline-block px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-800">
+            Plain-English Summary
+          </span>
+          <h2 class="text-lg font-bold text-emerald-950 mt-2">Issued Digital Certificate</h2>
+
+          <div class="mt-4 flex flex-col sm:flex-row items-center gap-5 bg-emerald-50/60 border border-emerald-100 rounded-xl p-4">
+            <canvas id="issue-qr-canvas" class="bg-white p-2 rounded-lg border border-gray-200"></canvas>
+            <div class="space-y-1.5 text-sm w-full">
+              <p><span class="text-gray-500">Holder Name:</span> <strong id="summary-holder">-</strong></p>
+              <p><span class="text-gray-500">Credential ID:</span> <strong id="summary-id" class="font-mono">-</strong></p>
+              <p><span class="text-gray-500">Course / Type:</span> <strong id="summary-type">-</strong></p>
+              <p><span class="text-gray-500">Issue Date:</span> <strong id="summary-date">-</strong></p>
+              <p><span class="text-gray-500">Status:</span> <span id="summary-status" class="font-semibold text-emerald-700">ACTIVE</span></p>
+            </div>
+          </div>
+
+          <div class="mt-4">
+            <p class="text-xs font-semibold text-gray-600 mb-1">SHA-256 Digital Fingerprint (Tamper Seal):</p>
+            <div id="summary-hash" class="bg-gray-900 text-emerald-300 font-mono text-xs p-3 rounded-xl break-all select-all">
+              -
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-5 pt-4 border-t border-gray-100 flex flex-wrap gap-2">
+          <button type="button" onclick="copyCurrentHash()" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-800">
+            Copy Hash
+          </button>
+          <button type="button" onclick="downloadQrPng()" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-amber-100 hover:bg-amber-200 text-amber-900">
+            Download QR PNG
+          </button>
+          <button type="button" onclick="sendToVerifyTab()" class="btn-primary px-3.5 py-2 rounded-xl text-xs font-semibold ml-auto">
+            Verify This Credential &rarr;
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------------
+         TAB 2: VERIFY CREDENTIAL
+         ------------------------------------------------------------ -->
+    <section id="section-verify" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Left Card: Verification Inputs -->
+      <div class="student-card p-6">
+        <h2 class="text-lg font-bold text-emerald-950">Verify a Credential</h2>
+        <p class="text-xs text-gray-500 mt-1">
+          Enter a Credential ID, Holder Name, or paste scanned QR JSON. Use quick test buttons to demo scenarios.
+        </p>
+
+        <!-- Quick Test Scenario Buttons -->
+        <div class="mt-4 flex flex-wrap gap-2">
+          <button type="button" onclick="loadTestScenario('authentic')" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-900 hover:bg-emerald-200">
+            Test Authentic
+          </button>
+          <button type="button" onclick="loadTestScenario('tampered')" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-100 text-rose-900 hover:bg-rose-200">
+            Test Tampered
+          </button>
+          <button type="button" onclick="loadTestScenario('burst')" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 text-amber-900 hover:bg-amber-200">
+            Test Suspicious 3 AM Burst
+          </button>
+        </div>
+
+        <form onsubmit="handleVerifyForm(event)" class="mt-4 space-y-4">
+          <div>
+            <label for="verify-query" class="block text-sm font-medium text-gray-700 mb-1">
+              Credential ID, Holder Name, or QR JSON
+            </label>
+            <input type="text" id="verify-query" required placeholder="e.g., CRED-2026-101 or Riya Verma"
+              class="w-full rounded-xl border border-gray-300 px-3.5 py-2.5 text-sm focus:outline-none focus:border-emerald-700" />
+          </div>
+
+          <div>
+            <label for="verify-hash" class="block text-sm font-medium text-gray-700 mb-1">
+              Submitted SHA-256 Hash
+            </label>
+            <input type="text" id="verify-hash" placeholder="Paste 64-character SHA-256 hash"
+              class="w-full rounded-xl border border-gray-300 px-3.5 py-2.5 text-xs font-mono focus:outline-none focus:border-emerald-700" />
+          </div>
+
+          <!-- Simple Traffic Context Inputs for AI Risk Scoring -->
+          <div class="grid grid-cols-2 gap-3 bg-gray-50 p-3.5 rounded-xl border border-gray-200">
+            <div>
+              <label for="verify-rpm" class="block text-xs font-semibold text-gray-700 mb-1">
+                Requests per Minute
+              </label>
+              <input type="number" id="verify-rpm" min="1" max="500" value="2" required
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white" />
+            </div>
+            <div>
+              <label for="verify-hour" class="block text-xs font-semibold text-gray-700 mb-1">
+                Hour of Day (0 - 23)
+              </label>
+              <input type="number" id="verify-hour" min="0" max="23" value="14" required
+                class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm bg-white" />
+            </div>
+          </div>
+
+          <button type="submit" class="btn-primary w-full py-3 px-4 rounded-xl text-sm font-semibold transition">
+            Verify Authenticity & Check AI Risk
+          </button>
+        </form>
+      </div>
+
+      <!-- Right Card: Plain-English Verdict Box -->
+      <div class="student-card p-6">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-bold text-emerald-950">Verification Result</h2>
+          <span id="verdict-badge" class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+            AUTHENTIC
+          </span>
+        </div>
+
+        <!-- Clear Verdict Box -->
+        <div id="verdict-box" class="mt-4 p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+          <p id="verdict-title" class="text-base font-bold text-emerald-950">
+            Credential is Authentic & Unchanged
+          </p>
+          <p id="verdict-message" class="text-sm text-emerald-900 mt-1">
+            The SHA-256 fingerprint matches the official database record.
+          </p>
+        </div>
+
+        <!-- Simple AI Behavioral Risk Level -->
+        <div class="mt-4 p-4 rounded-xl bg-gray-50 border border-gray-200">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase text-gray-500">AI Fraud Risk Assessment</span>
+            <span id="risk-badge" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800">
+              Low Risk (8%)
+            </span>
+          </div>
+          <p id="risk-explanation" class="text-xs text-gray-600 mt-2">
+            Normal daytime traffic speed and valid credential hash.
+          </p>
+        </div>
+
+        <!-- Toggleable Technical Details for Viva / Faculty Demo -->
+        <div class="mt-4">
+          <button type="button" onclick="toggleTechnicalBox()" class="w-full text-left px-4 py-2.5 rounded-xl text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-800 flex items-center justify-between">
+            <span>Show Technical Details (SHA-256 & Risk Breakdown)</span>
+            <span id="tech-toggle-icon">+</span>
+          </button>
+
+          <div id="technical-details-box" class="hidden mt-2 p-4 rounded-xl bg-gray-900 text-gray-200 text-xs font-mono space-y-2">
+            <p><span class="text-gray-400">Canonical JSON:</span><br /><span id="tech-canonical" class="text-amber-300 break-all">-</span></p>
+            <p><span class="text-gray-400">Official SHA-256:</span><br /><span id="tech-expected-hash" class="text-emerald-300 break-all">-</span></p>
+            <p><span class="text-gray-400">Submitted SHA-256:</span><br /><span id="tech-submitted-hash" class="text-sky-300 break-all">-</span></p>
+            <p><span class="text-gray-400">AI Risk Inputs:</span><br /><span id="tech-risk-inputs" class="text-rose-300">-</span></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------------
+         TAB 3: SAVED RECORDS & VERIFICATION LOGS
+         ------------------------------------------------------------ -->
+    <section id="section-records" class="hidden space-y-6">
+      <!-- Table 1: Issued Credentials -->
+      <div class="student-card p-6">
+        <h2 class="text-lg font-bold text-emerald-950">Issued Credentials Database</h2>
+        <p class="text-xs text-gray-500 mt-1">All credentials saved in browser storage. You can revoke or verify any record.</p>
+
+        <div class="overflow-x-auto mt-4">
+          <table class="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr class="border-b border-gray-200 text-xs uppercase text-gray-500">
+                <th class="py-2.5 px-3">Credential ID</th>
+                <th class="py-2.5 px-3">Holder Name</th>
+                <th class="py-2.5 px-3">Credential Type</th>
+                <th class="py-2.5 px-3">Issue Date</th>
+                <th class="py-2.5 px-3">Status</th>
+                <th class="py-2.5 px-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="credentials-table-body" class="divide-y divide-gray-100"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Table 2: Verification Audit History -->
+      <div class="student-card p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-bold text-emerald-950">Verification & AI Risk Logs</h2>
+            <p class="text-xs text-gray-500 mt-1">History of every verification attempt and its calculated risk level.</p>
+          </div>
+          <button type="button" onclick="clearVerificationLogs()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100">
+            Clear Logs
+          </button>
+        </div>
+
+        <div class="overflow-x-auto mt-4">
+          <table class="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr class="border-b border-gray-200 text-xs uppercase text-gray-500">
+                <th class="py-2.5 px-3">Time</th>
+                <th class="py-2.5 px-3">Credential ID</th>
+                <th class="py-2.5 px-3">Holder</th>
+                <th class="py-2.5 px-3">Verdict</th>
+                <th class="py-2.5 px-3">Risk Level</th>
+                <th class="py-2.5 px-3">Traffic (RPM / Hour)</th>
+              </tr>
+            </thead>
+            <tbody id="logs-table-body" class="divide-y divide-gray-100"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="text-center text-xs text-gray-500 py-6 border-t border-gray-200 bg-white">
+    AI-Based Digital Identity & Credential Verification System • Student Project Prototype
+  </footer>
+
+  <!-- ============================================================
+       JAVASCRIPT LOGIC (Readable, step-by-step functions)
+       ============================================================ -->
+  <script>
+    // Keys used to store data in browser localStorage
+    const CREDS_STORAGE_KEY = 'student_project_credentials_v1';
+    const LOGS_STORAGE_KEY = 'student_project_logs_v1';
+
+    // Global arrays holding credentials and verification logs
+    let credentialsList = [];
+    let logsList = [];
+    let currentDisplayedCredential = null;
+
+    // ------------------------------------------------------------
+    // STEP 1: Create Canonical JSON & Compute SHA-256 Hash
+    // ------------------------------------------------------------
+    function makeCanonicalJson(record) {
+      // Sort keys alphabetically so the same fields always produce the exact same string
+      const cleanRecord = {
+        credential_id: record.credential_id.trim(),
+        credential_type: record.credential_type.trim(),
+        holder_name: record.holder_name.trim(),
+        issue_date: record.issue_date.trim()
+      };
+      return JSON.stringify(cleanRecord);
+    }
+
+    async function computeSha256(text) {
+      // Use browser built-in Web Crypto API to generate a 64-character SHA-256 hex digest
+      const encoder = new TextEncoder();
+      const data = encoder.encode(text);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashBytes = Array.from(new Uint8Array(hashBuffer));
+      return hashBytes.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    // ------------------------------------------------------------
+    // STEP 2: Draw QR Code onto HTML Canvas
+    // ------------------------------------------------------------
+    function drawQrCode(canvasId, credentialId, sha256Hash) {
+      const canvas = document.getElementById(canvasId);
+      const qrText = JSON.stringify({ credential_id: credentialId, hash: sha256Hash });
+
+      if (typeof QRious !== 'undefined') {
+        new QRious({
+          element: canvas,
+          value: qrText,
+          size: 140,
+          foreground: '#1b4332',
+          background: '#ffffff'
+        });
+      } else {
+        // Simple fallback box if offline without CDN
+        canvas.width = 140;
+        canvas.height = 140;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ecfdf5';
+        ctx.fillRect(0, 0, 140, 140);
+        ctx.fillStyle = '#1b4332';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillText('QR: ' + credentialId, 14, 72);
+      }
+    }
+
+    // ------------------------------------------------------------
+    // STEP 3: Simple AI Anomaly Risk Scoring Function
+    // ------------------------------------------------------------
+    function calculateFraudRisk(requestsPerMin, hashMismatch, hourOfDay) {
+      // Base risk starts low (5%)
+      let riskScore = 0.05;
+
+      // High request speed (e.g., automated bot burst) increases risk
+      if (requestsPerMin > 30) {
+        riskScore += 0.45;
+      } else if (requestsPerMin > 10) {
+        riskScore += 0.20;
+      }
+
+      // A tampered or mismatched hash raises risk significantly
+      if (hashMismatch) {
+        riskScore += 0.35;
+      }
+
+      // Late-night verification attempts (before 6 AM or after 11 PM) add risk
+      if (hourOfDay < 6 || hourOfDay > 23) {
+        riskScore += 0.20;
+      }
+
+      // Keep risk score between 0.05 (5%) and 0.99 (99%)
+      riskScore = Math.min(Math.max(riskScore, 0.05), 0.99);
+      const percent = Math.round(riskScore * 100);
+
+      if (percent >= 65) {
+        return { percent, level: 'High Risk', badgeClass: 'bg-rose-100 text-rose-800', reason: 'Abnormal request burst, hash mismatch, or odd-hour activity detected.' };
+      }
+      if (percent >= 35) {
+        return { percent, level: 'Medium Risk', badgeClass: 'bg-amber-100 text-amber-900', reason: 'Slightly elevated request frequency or off-peak verification hour.' };
+      }
+      return { percent, level: 'Low Risk', badgeClass: 'bg-emerald-100 text-emerald-800', reason: 'Normal daytime verification speed and consistent request behavior.' };
+    }
+
+    // ------------------------------------------------------------
+    // STEP 4: Seed Initial Indian Student Records
+    // ------------------------------------------------------------
+    async function seedInitialData() {
+      const sample1 = {
+        credential_id: 'CRED-2026-101',
+        holder_name: 'Riya Verma',
+        credential_type: 'B.Tech Computer Science',
+        issue_date: '2026-11-22'
+      };
+      sample1.hash = await computeSha256(makeCanonicalJson(sample1));
+      sample1.status = 'ACTIVE';
+
+      const sample2 = {
+        credential_id: 'CRED-2026-102',
+        holder_name: 'Aarav Sharma',
+        credential_type: 'Data Structures Merit Certificate',
+        issue_date: '2026-11-20'
+      };
+      sample2.hash = await computeSha256(makeCanonicalJson(sample2));
+      sample2.status = 'ACTIVE';
+
+      credentialsList = [sample1, sample2];
+      logsList = [];
+      saveToLocalStorage();
+    }
+
+    function saveToLocalStorage() {
+      localStorage.setItem(CREDS_STORAGE_KEY, JSON.stringify(credentialsList));
+      localStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify(logsList));
+      updateTablesAndCounts();
+    }
+
+    async function resetDemoRecords() {
+      await seedInitialData();
+      displayIssuedCard(credentialsList[0]);
+      loadTestScenario('authentic');
+      showBanner('Sample student records reset successfully.');
+    }
+
+    // ------------------------------------------------------------
+    // STEP 5: Issue Credential Form Handler
+    // ------------------------------------------------------------
+    async function handleIssueForm(event) {
+      event.preventDefault();
+
+      const credId = document.getElementById('input-cred-id').value.trim();
+      const holderName = document.getElementById('input-holder-name').value.trim();
+      const credType = document.getElementById('input-cred-type').value.trim();
+      const issueDate = document.getElementById('input-issue-date').value.trim();
+
+      // Prevent duplicate Credential IDs
+      const exists = credentialsList.some(c => c.credential_id.toLowerCase() === credId.toLowerCase());
+      if (exists) {
+        showBanner('That Credential ID already exists. Please enter a new ID.');
+        return;
+      }
+
+      const newRecord = {
+        credential_id: credId,
+        holder_name: holderName,
+        credential_type: credType,
+        issue_date: issueDate,
+        status: 'ACTIVE'
+      };
+      newRecord.hash = await computeSha256(makeCanonicalJson(newRecord));
+
+      credentialsList.unshift(newRecord);
+      saveToLocalStorage();
+      displayIssuedCard(newRecord);
+
+      // Clear form inputs for next entry
+      document.getElementById('input-cred-id').value = '';
+      document.getElementById('input-holder-name').value = '';
+      document.getElementById('input-cred-type').value = '';
+      showBanner('Issued credential for ' + holderName + '!');
+    }
+
+    function displayIssuedCard(record) {
+      if (!record) return;
+      currentDisplayedCredential = record;
+      document.getElementById('summary-holder').textContent = record.holder_name;
+      document.getElementById('summary-id').textContent = record.credential_id;
+      document.getElementById('summary-type').textContent = record.credential_type;
+      document.getElementById('summary-date').textContent = record.issue_date;
+      document.getElementById('summary-status').textContent = record.status;
+      document.getElementById('summary-hash').textContent = record.hash;
+      drawQrCode('issue-qr-canvas', record.credential_id, record.hash);
+    }
+
+    function copyCurrentHash() {
+      if (!currentDisplayedCredential) return;
+      const temp = document.createElement('textarea');
+      temp.value = currentDisplayedCredential.hash;
+      document.body.appendChild(temp);
+      temp.select();
+      document.execCommand('copy');
+      document.body.removeChild(temp);
+      showBanner('SHA-256 hash copied to clipboard.');
+    }
+
+    function downloadQrPng() {
+      if (!currentDisplayedCredential) return;
+      const canvas = document.getElementById('issue-qr-canvas');
+      const link = document.createElement('a');
+      link.download = currentDisplayedCredential.credential_id + '_QR.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
+    function sendToVerifyTab() {
+      if (!currentDisplayedCredential) return;
+      showTab('verify');
+      document.getElementById('verify-query').value = currentDisplayedCredential.credential_id;
+      document.getElementById('verify-hash').value = currentDisplayedCredential.hash;
+      document.getElementById('verify-rpm').value = 2;
+      document.getElementById('verify-hour').value = 14;
+      runVerification();
+    }
+
+    // ------------------------------------------------------------
+    // STEP 6: Verify Credential & AI Risk Check
+    // ------------------------------------------------------------
+    function loadTestScenario(type) {
+      const target = credentialsList[0];
+      if (!target) return;
+
+      if (type === 'authentic') {
+        document.getElementById('verify-query').value = target.credential_id;
+        document.getElementById('verify-hash').value = target.hash;
+        document.getElementById('verify-rpm').value = 2;
+        document.getElementById('verify-hour').value = 14;
+      } else if (type === 'tampered') {
+        document.getElementById('verify-query').value = target.credential_id;
+        document.getElementById('verify-hash').value = '0000000000000000000000000000000000000000000000000000000000000000';
+        document.getElementById('verify-rpm').value = 3;
+        document.getElementById('verify-hour').value = 15;
+      } else if (type === 'burst') {
+        document.getElementById('verify-query').value = target.credential_id;
+        document.getElementById('verify-hash').value = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+        document.getElementById('verify-rpm').value = 60;
+        document.getElementById('verify-hour').value = 3;
+      }
+      runVerification();
+    }
+
+    function handleVerifyForm(event) {
+      event.preventDefault();
+      runVerification();
+    }
+
+    async function runVerification() {
+      let query = document.getElementById('verify-query').value.trim();
+      let submittedHash = document.getElementById('verify-hash').value.trim().toLowerCase();
+      const rpm = Number(document.getElementById('verify-rpm').value) || 1;
+      const hour = Number(document.getElementById('verify-hour').value) || 12;
+
+      // If user pasted full QR JSON string, extract credential_id and hash automatically
+      if (query.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(query);
+          if (parsed.credential_id) query = parsed.credential_id.trim();
+          if (parsed.hash && !submittedHash) {
+            submittedHash = parsed.hash.trim().toLowerCase();
+            document.getElementById('verify-hash').value = submittedHash;
+          }
+        } catch (e) {
+          // Ignore invalid JSON and search normally
+        }
+      }
+
+      // Find credential by exact ID or matching Holder Name
+      const found = credentialsList.find(c =>
+        c.credential_id.toLowerCase() === query.toLowerCase() ||
+        c.holder_name.toLowerCase().includes(query.toLowerCase())
+      );
+
+      let verdict = 'NOT FOUND';
+      let title = 'Record Not Found';
+      let message = 'No credential matching "' + query + '" exists in the system.';
+      let boxClass = 'bg-gray-100 border-gray-300';
+      let badgeClass = 'bg-gray-200 text-gray-800';
+      let hashMismatch = true;
+      let canonicalText = 'N/A';
+      let expectedHash = 'N/A';
+
+      if (found) {
+        canonicalText = makeCanonicalJson(found);
+        expectedHash = await computeSha256(canonicalText);
+
+        if (found.status === 'REVOKED') {
+          verdict = 'REVOKED';
+          title = 'Credential Has Been Revoked';
+          message = 'This certificate for ' + found.holder_name + ' was cancelled by the issuing authority.';
+          boxClass = 'bg-amber-50 border-amber-300';
+          badgeClass = 'bg-amber-100 text-amber-900';
+          hashMismatch = false;
+        } else if (submittedHash === expectedHash) {
+          verdict = 'AUTHENTIC';
+          title = 'Credential is Authentic & Unchanged (' + found.holder_name + ')';
+          message = 'The SHA-256 fingerprint matches the official record. No tampering detected.';
+          boxClass = 'bg-emerald-50 border-emerald-200';
+          badgeClass = 'bg-emerald-100 text-emerald-800';
+          hashMismatch = false;
+        } else {
+          verdict = 'TAMPERED';
+          title = 'Tampering Detected! Hash Mismatch';
+          message = 'The submitted hash does NOT match the official certificate for ' + found.holder_name + '.';
+          boxClass = 'bg-rose-50 border-rose-300';
+          badgeClass = 'bg-rose-100 text-rose-800';
+          hashMismatch = true;
+        }
+      }
+
+      // Compute AI behavioral risk score
+      const risk = calculateFraudRisk(rpm, hashMismatch, hour);
+
+      // Update Verdict UI
+      const verdictBadge = document.getElementById('verdict-badge');
+      verdictBadge.textContent = verdict;
+      verdictBadge.className = 'px-3 py-1 rounded-full text-xs font-bold ' + badgeClass;
+
+      const verdictBox = document.getElementById('verdict-box');
+      verdictBox.className = 'mt-4 p-4 rounded-xl border ' + boxClass;
+      document.getElementById('verdict-title').textContent = title;
+      document.getElementById('verdict-message').textContent = message;
+
+      // Update AI Risk UI
+      const riskBadge = document.getElementById('risk-badge');
+      riskBadge.textContent = risk.level + ' (' + risk.percent + '%)';
+      riskBadge.className = 'px-2.5 py-1 rounded-lg text-xs font-bold ' + risk.badgeClass;
+      document.getElementById('risk-explanation').textContent = risk.reason;
+
+      // Update Technical Details Drawer
+      document.getElementById('tech-canonical').textContent = canonicalText;
+      document.getElementById('tech-expected-hash').textContent = expectedHash;
+      document.getElementById('tech-submitted-hash').textContent = submittedHash || '(empty)';
+      document.getElementById('tech-risk-inputs').textContent =
+        'RPM=' + rpm + ', HashMismatch=' + hashMismatch + ', Hour=' + hour + ' -> Risk=' + risk.percent + '% (' + risk.level + ')';
+
+      // Save entry to Audit Logs
+      logsList.unshift({
+        time: new Date().toLocaleTimeString(),
+        credential_id: found ? found.credential_id : query,
+        holder_name: found ? found.holder_name : 'Unknown',
+        verdict: verdict,
+        risk_text: risk.level + ' (' + risk.percent + '%)',
+        traffic: rpm + ' req/min @ ' + hour + ':00'
+      });
+      saveToLocalStorage();
+    }
+
+    function toggleTechnicalBox() {
+      const box = document.getElementById('technical-details-box');
+      const icon = document.getElementById('tech-toggle-icon');
+      const isHidden = box.classList.contains('hidden');
+      box.classList.toggle('hidden');
+      icon.textContent = isHidden ? '-' : '+';
+    }
+
+    // ------------------------------------------------------------
+    // STEP 7: Render Tables in Tab 3
+    // ------------------------------------------------------------
+    function updateTablesAndCounts() {
+      document.getElementById('record-count').textContent = credentialsList.length;
+
+      // Render Credentials Table
+      const credsBody = document.getElementById('credentials-table-body');
+      credsBody.innerHTML = credentialsList.map(c => {
+        const isActive = c.status === 'ACTIVE';
+        const statusHtml = isActive
+          ? '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">ACTIVE</span>'
+          : '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800">REVOKED</span>';
+
+        return `
+          <tr>
+            <td class="py-3 px-3 font-mono text-xs font-semibold">${c.credential_id}</td>
+            <td class="py-3 px-3 font-medium">${c.holder_name}</td>
+            <td class="py-3 px-3 text-gray-600">${c.credential_type}</td>
+            <td class="py-3 px-3 text-gray-600 text-xs">${c.issue_date}</td>
+            <td class="py-3 px-3">${statusHtml}</td>
+            <td class="py-3 px-3 text-right space-x-1">
+              <button onclick="verifyFromTable('${c.credential_id}')" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 hover:bg-emerald-100">Verify</button>
+              <button onclick="toggleRevoke('${c.credential_id}')" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100">
+                ${isActive ? 'Revoke' : 'Restore'}
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      // Render Logs Table
+      const logsBody = document.getElementById('logs-table-body');
+      if (logsList.length === 0) {
+        logsBody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-xs text-gray-500">No verification checks run yet.</td></tr>';
+      } else {
+        logsBody.innerHTML = logsList.map(log => `
+          <tr>
+            <td class="py-2.5 px-3 text-xs text-gray-500">${log.time}</td>
+            <td class="py-2.5 px-3 font-mono text-xs font-semibold">${log.credential_id}</td>
+            <td class="py-2.5 px-3">${log.holder_name}</td>
+            <td class="py-2.5 px-3 font-bold text-xs">${log.verdict}</td>
+            <td class="py-2.5 px-3 text-xs font-semibold">${log.risk_text}</td>
+            <td class="py-2.5 px-3 text-xs text-gray-500">${log.traffic}</td>
+          </tr>
+        `).join('');
+      }
+    }
+
+    function verifyFromTable(credId) {
+      const record = credentialsList.find(c => c.credential_id === credId);
+      if (!record) return;
+      showTab('verify');
+      document.getElementById('verify-query').value = record.credential_id;
+      document.getElementById('verify-hash').value = record.hash;
+      document.getElementById('verify-rpm').value = 2;
+      document.getElementById('verify-hour').value = 14;
+      runVerification();
+    }
+
+    function toggleRevoke(credId) {
+      const record = credentialsList.find(c => c.credential_id === credId);
+      if (!record) return;
+      record.status = record.status === 'ACTIVE' ? 'REVOKED' : 'ACTIVE';
+      saveToLocalStorage();
+      if (currentDisplayedCredential && currentDisplayedCredential.credential_id === credId) {
+        displayIssuedCard(record);
+      }
+      showBanner('Credential ' + credId + ' is now ' + record.status + '.');
+    }
+
+    function clearVerificationLogs() {
+      logsList = [];
+      saveToLocalStorage();
+      showBanner('Verification history cleared.');
+    }
+
+    // ------------------------------------------------------------
+    // STEP 8: Tab Switching & Banner Helper
+    // ------------------------------------------------------------
+    function showTab(tabName) {
+      ['issue', 'verify', 'records'].forEach(name => {
+        document.getElementById('section-' + name).classList.add('hidden');
+        const btn = document.getElementById('btn-tab-' + name);
+        btn.className = 'tab-inactive px-4 py-2.5 rounded-xl text-sm font-semibold transition';
+      });
+      document.getElementById('section-' + tabName).classList.remove('hidden');
+      document.getElementById('btn-tab-' + tabName).className = 'tab-active px-4 py-2.5 rounded-xl text-sm font-semibold transition';
+    }
+
+    function showBanner(text) {
+      const banner = document.getElementById('status-banner');
+      banner.textContent = text;
+      banner.classList.remove('hidden');
+      setTimeout(() => banner.classList.add('hidden'), 2800);
+    }
+
+    // ------------------------------------------------------------
+    // INITIALIZE APP ON PAGE LOAD
+    // ------------------------------------------------------------
+    window.addEventListener('DOMContentLoaded', async () => {
+      const savedCreds = localStorage.getItem(CREDS_STORAGE_KEY);
+      const savedLogs = localStorage.getItem(LOGS_STORAGE_KEY);
+
+      if (savedCreds) {
+        credentialsList = JSON.parse(savedCreds);
+        logsList = savedLogs ? JSON.parse(savedLogs) : [];
+        updateTablesAndCounts();
+      } else {
+        await seedInitialData();
+      }
+
+      displayIssuedCard(credentialsList[0]);
+      loadTestScenario('authentic');
+    });
+  </script>
+</body>
+</html>

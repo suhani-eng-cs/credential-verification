@@ -1,0 +1,251 @@
+from pathlib import Path
+import sqlite3
+from typing import Any
+
+import numpy as np
+
+from credential_system import CredentialVerificationSystem
+
+
+STATUS_LABELS: dict[str, tuple[str, str]] = {
+    "VALID": (
+        "AUTHENTIC & UNCHANGED",
+        "The credential matches the official record and has not been altered.",
+    ),
+    "TAMPERED": (
+        "TAMPERED / MISMATCH DETECTED",
+        "The submitted details or code do not match the original record.",
+    ),
+    "REVOKED": (
+        "REVOKED CREDENTIAL",
+        "This credential was issued earlier but has since been cancelled.",
+    ),
+    "INVALID": (
+        "RECORD NOT FOUND",
+        "No matching credential ID or holder name exists in the system.",
+    ),
+}
+
+
+def risk_level_label(score: float, flagged: bool) -> str:
+    if flagged or score >= 0.65:
+        return f"HIGH RISK ({score:.0%}) - Needs manual review"
+    if score >= 0.35:
+        return f"MEDIUM RISK ({score:.0%}) - Worth keeping an eye on"
+    return f"LOW RISK ({score:.0%}) - Looks normal"
+
+
+def format_issuance_summary(issued: dict[str, Any], holder_name: str, credential_type: str) -> str:
+    qr_note = issued["qr_code_path"] if issued.get("qr_code_path") else "Not generated"
+    short_hash = f"{issued['payload_hash'][:12]}...{issued['payload_hash'][-8:]}"
+    return "\n".join(
+        [
+            "=" * 56,
+            "NEW DIGITAL CREDENTIAL ISSUED",
+            "=" * 56,
+            f"Holder Name     : {holder_name}",
+            f"Credential Type : {credential_type}",
+            f"Credential ID   : {issued['credential_id']}",
+            f"Current Status  : {issued['status']} (Ready for verification)",
+            f"Security Code   : {short_hash} (SHA-256 fingerprint)",
+            f"QR Code File    : {qr_note}",
+            "=" * 56,
+        ]
+    )
+
+
+def format_verification_summary(result: dict[str, Any], holder_name: str | None = None) -> str:
+    headline, explanation = STATUS_LABELS.get(
+        result["status"],
+        (result["status"], "Verification completed."),
+    )
+    risk_text = risk_level_label(float(result["fraud_score"]), bool(result["flagged"]))
+    lines = [
+        "-" * 56,
+        f"Verification Check #{result['log_id']} | Credential: {result['credential_id']}",
+    ]
+    if holder_name:
+        lines.append(f"Holder Name     : {holder_name}")
+    lines.extend(
+        [
+            f"Result          : {headline}",
+            f"What This Means : {explanation}",
+            f"Activity Check  : {risk_text}",
+            "-" * 56,
+        ]
+    )
+    return "\n".join(lines)
+
+
+def lookup_credential_by_query(db_path: Path, query: str) -> dict[str, Any] | None:
+    """Find a credential by exact Credential ID or matching Holder Name."""
+    clean_query = query.strip()
+    if not clean_query or not db_path.exists():
+        return None
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT credential_id, holder_name, credential_type, issue_date,
+                   payload_hash, status
+            FROM credentials
+            WHERE LOWER(credential_id) = LOWER(?)
+            LIMIT 1
+            """,
+            (clean_query,),
+        ).fetchone()
+
+        if row is None:
+            row = conn.execute(
+                """
+                SELECT credential_id, holder_name, credential_type, issue_date,
+                       payload_hash, status
+                FROM credentials
+                WHERE LOWER(holder_name) LIKE LOWER(?)
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (f"%{clean_query}%",),
+            ).fetchone()
+
+    return dict(row) if row is not None else None
+
+
+def build_system_with_baseline(db_path: Path) -> CredentialVerificationSystem:
+    system = CredentialVerificationSystem(db_path=db_path, fraud_threshold=0.65)
+    baseline = np.array(
+        [
+            [1.0, 0.0, 10],
+            [2.0, 0.0, 11],
+            [1.5, 0.0, 14],
+            [2.5, 0.0, 15],
+            [1.0, 0.0, 16],
+            [3.0, 0.0, 12],
+            [2.0, 0.0, 13],
+            [1.0, 0.0, 17],
+        ]
+    )
+    system.train_fraud_model(baseline)
+    return system
+
+
+def seed_sample_credential(system: CredentialVerificationSystem) -> None:
+    existing = lookup_credential_by_query(system.db_path, "CRED-2026-104")
+    if existing is None:
+        issued = system.issue_credential(
+            credential_id="CRED-2026-104",
+            holder_name="Riya Verma",
+            credential_type="B.Tech Computer Science",
+            issue_date="2026-11-22",
+            qr_output_path=Path("output/riya_qr_presentable.png"),
+        )
+        print(format_issuance_summary(issued, "Riya Verma", "B.Tech Computer Science"))
+
+
+def verify_by_id_or_name(system: CredentialVerificationSystem) -> None:
+    query = input("Enter Credential ID or Holder Name: ").strip()
+    if not query:
+        print("Please enter a Credential ID or Holder Name.")
+        return
+
+    record = lookup_credential_by_query(system.db_path, query)
+    if record is None:
+        result = system.verify_credential(
+            credential_id=query,
+            submitted_hash="",
+            requests_per_min=1.0,
+            hash_mismatches=1.0,
+        )
+        print(format_verification_summary(result))
+        return
+
+    print(f"Found record for {record['holder_name']} ({record['credential_id']}).")
+    choice = input("Press Enter to check against official code, or type a custom code to test tampering: ").strip()
+    code_to_check = choice if choice else record["payload_hash"]
+
+    result = system.verify_credential(
+        credential_id=record["credential_id"],
+        submitted_hash=code_to_check,
+        requests_per_min=2.0,
+        hash_mismatches=0.0 if code_to_check == record["payload_hash"] else 1.0,
+    )
+    print(format_verification_summary(result, holder_name=record["holder_name"]))
+
+
+def issue_new_credential_interactive(system: CredentialVerificationSystem) -> None:
+    credential_id = input("New Credential ID (e.g., CRED-2026-105): ").strip()
+    holder_name = input("Holder Full Name: ").strip()
+    credential_type = input("Credential Type (e.g., B.Tech Degree): ").strip()
+    issue_date = input("Issue Date (YYYY-MM-DD, e.g., 2026-11-22): ").strip()
+
+    if not all([credential_id, holder_name, credential_type, issue_date]):
+        print("All four fields are required to issue a credential.")
+        return
+
+    safe_name = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in credential_id)
+    qr_path = Path("output") / f"{safe_name}_qr.png"
+    issued = system.issue_credential(
+        credential_id=credential_id,
+        holder_name=holder_name,
+        credential_type=credential_type,
+        issue_date=issue_date,
+        qr_output_path=qr_path,
+    )
+    print(format_issuance_summary(issued, holder_name, credential_type))
+
+
+def run_demo_checks(system: CredentialVerificationSystem) -> None:
+    seed_sample_credential(system)
+    record = lookup_credential_by_query(system.db_path, "CRED-2026-104")
+    if record is None:
+        print("Sample record could not be loaded.")
+        return
+
+    valid_check = system.verify_credential(
+        credential_id=record["credential_id"],
+        submitted_hash=record["payload_hash"],
+        requests_per_min=2.0,
+        hash_mismatches=0.0,
+        hour_of_day=14,
+    )
+    print(format_verification_summary(valid_check, holder_name=record["holder_name"]))
+
+    tampered_check = system.verify_credential(
+        credential_id=record["credential_id"],
+        submitted_hash="0" * 64,
+        requests_per_min=50.0,
+        hash_mismatches=8.0,
+        hour_of_day=3,
+    )
+    print(format_verification_summary(tampered_check, holder_name=record["holder_name"]))
+
+
+def run_menu() -> None:
+    db_file = Path("presentable_credentials.db")
+    system = build_system_with_baseline(db_file)
+    seed_sample_credential(system)
+
+    while True:
+        print("\n=== CREDENTIAL VERIFICATION MENU ===")
+        print("1. Verify by Credential ID or Holder Name")
+        print("2. Issue a New Credential & QR Code")
+        print("3. Run Sample Authentic vs. Tampered Check")
+        print("4. Exit")
+        choice = input("Choose an option (1-4): ").strip()
+
+        if choice == "1":
+            verify_by_id_or_name(system)
+        elif choice == "2":
+            issue_new_credential_interactive(system)
+        elif choice == "3":
+            run_demo_checks(system)
+        elif choice == "4":
+            print("Exiting. Your saved records remain in presentable_credentials.db.")
+            break
+        else:
+            print("Please enter 1, 2, 3, or 4.")
+
+
+if __name__ == "__main__":
+    run_menu()
